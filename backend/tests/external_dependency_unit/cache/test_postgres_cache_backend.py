@@ -8,14 +8,18 @@ and the periodic cleanup function.
 import time
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
 from onyx.cache.interface import TTL_KEY_NOT_FOUND, TTL_NO_EXPIRY
 from onyx.cache.postgres_backend import (
     PostgresCacheBackend,
     cleanup_expired_cache_entries,
 )
+from onyx.db.engine.sql_engine import get_session_with_tenant
 from onyx.db.models import CacheStore
+from shared_configs.configs import POSTGRES_DEFAULT_SCHEMA_STANDARD_VALUE
 
 
 def _key() -> str:
@@ -259,3 +263,22 @@ class TestCleanup:
         pg_cache.set(k, b"permanent")
         cleanup_expired_cache_entries()
         assert pg_cache.get(k) == b"permanent"
+
+
+def test_control_lease_renewal_does_not_wait_for_a_locked_cache_row(
+    pg_cache: PostgresCacheBackend,
+) -> None:
+    tenant_id = POSTGRES_DEFAULT_SCHEMA_STANDARD_VALUE
+    control = PostgresCacheBackend(tenant_id, control=True)
+    key = _key()
+    pg_cache.set(key, b"owner", ex=60)
+    try:
+        with get_session_with_tenant(tenant_id=tenant_id) as session:
+            session.execute(
+                select(CacheStore).where(CacheStore.key == key).with_for_update()
+            )
+            with pytest.raises(OperationalError, match="timeout"):
+                control.expire_if_value(key, b"owner", 60)
+        assert control.expire_if_value(key, b"owner", 60)
+    finally:
+        pg_cache.delete(key)
