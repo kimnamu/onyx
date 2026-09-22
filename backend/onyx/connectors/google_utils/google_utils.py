@@ -11,10 +11,14 @@ from googleapiclient.errors import HttpError
 
 from onyx.connectors.google_drive.models import GoogleDriveFileType
 from onyx.utils.logger import setup_logger
-from onyx.utils.retry_after import parse_retry_after_seconds
+from onyx.utils.retry_after import cap_wait_seconds, parse_retry_after_seconds
 from onyx.utils.retry_wrapper import retry_builder
 
 logger = setup_logger()
+
+# Google daily quotas reset at midnight Pacific time, so a legitimate wait can
+# be almost one day.
+MAX_GOOGLE_RATE_LIMIT_WAIT_SECONDS = 86400.0
 
 _RATE_LIMIT_REASONS = {"userRateLimitExceeded", "rateLimitExceeded"}
 
@@ -101,7 +105,9 @@ def _execute_with_retry(request: Any) -> Any:
                         )
                         sleep_time = 60
 
-                sleep_time += 3  # Add a buffer to be safe
+                sleep_time = cap_wait_seconds(
+                    sleep_time + 3, MAX_GOOGLE_RATE_LIMIT_WAIT_SECONDS
+                )
 
                 logger.info(
                     "Rate limit exceeded. Attempt %s/%s. Sleeping for %s seconds.",

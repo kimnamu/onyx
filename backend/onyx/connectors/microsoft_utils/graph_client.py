@@ -20,7 +20,7 @@ from office365.runtime.queries.client_query import ClientQuery
 
 from onyx.configs.app_configs import REQUEST_TIMEOUT_SECONDS
 from onyx.utils.logger import setup_logger
-from onyx.utils.retry_after import parse_retry_after_seconds
+from onyx.utils.retry_after import cap_wait_seconds, parse_retry_after_seconds
 
 logger = setup_logger()
 
@@ -52,13 +52,13 @@ def backoff_seconds(attempt: int, retry_after: str | None) -> float:
     from ``[base/2, base]`` so that many documents failing at the same instant
     (e.g. during a Graph throttling window) don't all retry on the same tick
     and re-create the thundering herd. Server-provided Retry-After values are
-    used verbatim, since those are an explicit instruction rather than a guess.
+    used without jitter, but capped at MAX_RETRY_AFTER_SECONDS.
 
     ``attempt`` is 0-indexed (0 for the first retry).
     """
     parsed = parse_retry_after_seconds(retry_after)
     if parsed is not None:
-        return parsed
+        return cap_wait_seconds(parsed)
     base = min(30, (2**attempt) * 5)
     return base / 2 + random.uniform(0, base / 2)
 

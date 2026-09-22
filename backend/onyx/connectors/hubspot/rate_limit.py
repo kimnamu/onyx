@@ -9,7 +9,7 @@ from onyx.connectors.cross_connector_utils.rate_limit_wrapper import (
     rate_limit_builder,
 )
 from onyx.utils.logger import setup_logger
-from onyx.utils.retry_after import parse_retry_after_seconds
+from onyx.utils.retry_after import cap_wait_seconds, parse_retry_after_seconds
 
 logger = setup_logger()
 
@@ -65,6 +65,10 @@ def is_rate_limit_error(exception: Exception) -> bool:
 
 
 def get_rate_limit_retry_delay_seconds(exception: Exception) -> float:
+    return cap_wait_seconds(_raw_retry_delay_seconds(exception))
+
+
+def _raw_retry_delay_seconds(exception: Exception) -> float:
     headers = getattr(exception, "headers", None)  # ods: ignore[getattr]
 
     retry_after = parse_retry_after_seconds(_extract_header(headers, "Retry-After"))

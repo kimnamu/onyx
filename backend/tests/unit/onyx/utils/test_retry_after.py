@@ -3,7 +3,11 @@ from email.utils import format_datetime
 
 import pytest
 
-from onyx.utils.retry_after import parse_retry_after_seconds
+from onyx.utils.retry_after import (
+    MAX_RETRY_AFTER_SECONDS,
+    cap_wait_seconds,
+    parse_retry_after_seconds,
+)
 
 
 @pytest.mark.parametrize(
@@ -52,3 +56,21 @@ def test_past_http_date_floors_at_zero() -> None:
 def test_parses_literal_http_date_string() -> None:
     # A date far in the past must floor at 0 regardless of formatting details.
     assert parse_retry_after_seconds("Wed, 21 Oct 2015 07:28:00 GMT") == 0.0
+
+
+@pytest.mark.parametrize(
+    "seconds,expected",
+    [
+        (12.0, 12.0),
+        (-3.0, 0.0),
+        (1e9, MAX_RETRY_AFTER_SECONDS),
+        (float("inf"), MAX_RETRY_AFTER_SECONDS),
+        (float("nan"), 0.0),
+    ],
+)
+def test_cap_wait_seconds(seconds: float, expected: float) -> None:
+    assert cap_wait_seconds(seconds) == expected
+
+
+def test_cap_wait_seconds_custom_max() -> None:
+    assert cap_wait_seconds(5000.0, max_seconds=3660.0) == 3660.0

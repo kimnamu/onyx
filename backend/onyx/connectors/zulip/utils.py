@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 from urllib.parse import quote
 
 from onyx.utils.logger import setup_logger
+from onyx.utils.retry_after import cap_wait_seconds
 
 logger = setup_logger()
 
@@ -30,15 +31,21 @@ class ZulipHTTPError(ZulipAPIError):
         return f"HTTP error {self.status_code} occurred during Zulip API call"
 
 
+_MAX_RATE_LIMIT_RETRIES = 5
+
+
 def __call_with_retry(fun: Callable, *args: Any, **kwargs: Any) -> Dict[str, Any]:
-    result = fun(*args, **kwargs)
-    if result.get("result") == "error":
-        if result.get("code") == "RATE_LIMIT_HIT":
-            retry_after = float(result["retry-after"]) + 1
-            logger.warning("Rate limit hit, retrying after %s seconds", retry_after)
-            time.sleep(retry_after)
-            return __call_with_retry(fun, *args)
-    return result
+    for _ in range(_MAX_RATE_LIMIT_RETRIES):
+        result = fun(*args, **kwargs)
+        if not (
+            result.get("result") == "error" and result.get("code") == "RATE_LIMIT_HIT"
+        ):
+            return result
+        retry_after = cap_wait_seconds(float(result["retry-after"]) + 1)
+        logger.warning("Rate limit hit, retrying after %s seconds", retry_after)
+        time.sleep(retry_after)
+    # Final attempt; a rate-limit error here is raised by __raise_if_error.
+    return fun(*args, **kwargs)
 
 
 def __raise_if_error(response: dict[str, Any]) -> None:

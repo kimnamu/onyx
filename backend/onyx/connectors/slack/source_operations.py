@@ -46,7 +46,11 @@ from onyx.connectors.source_operations import (
 from onyx.redis.redis_pool import get_redis_client
 from onyx.redis.tenant_redis_client import TenantRedisClient
 from onyx.utils.logger import setup_logger
-from onyx.utils.retry_after import parse_retry_after_seconds
+from onyx.utils.retry_after import (
+    MAX_RETRY_AFTER_SECONDS,
+    cap_wait_seconds,
+    parse_retry_after_seconds,
+)
 
 # ``SlackApiError`` is re-exported as part of the operation contract: callers
 # branch on Slack error slugs (``is_archived``, ``missing_scope``, ...) and the
@@ -200,7 +204,9 @@ class OnyxRedisSlackRetryHandler(BaseRetryHandler):
         ttl_ms = self._redis.pttl(self._delay_key)
         if ttl_ms < 0:  # negative values are error status codes ... see docs
             ttl_ms = 0
-        ttl_ms_new = ttl_ms + int(duration_s * 1000.0)
+        ttl_ms_new = min(
+            ttl_ms + int(duration_s * 1000.0), int(MAX_RETRY_AFTER_SECONDS * 1000.0)
+        )
         self._redis.set(self._delay_key, "1", px=ttl_ms_new)
 
         logger.warning(
@@ -304,7 +310,8 @@ class OnyxSlackWebClient(WebClient):
                 self.num_requests,
             )
 
-            time.sleep(delay_ms / 1000.0)
+            # The TTL is shared through Redis, so cap it here too.
+            time.sleep(cap_wait_seconds(delay_ms / 1000.0))
 
         result = super()._perform_urllib_http_request_internal(url, req)
 

@@ -7,6 +7,19 @@ from onyx.utils.logger import setup_logger
 
 logger = setup_logger()
 
+# Upper bound for a server-supplied wait. Normal vendor Retry-After values are
+# seconds to a few minutes; a larger value must not pin a worker indefinitely.
+MAX_RETRY_AFTER_SECONDS = 300.0
+
+
+def cap_wait_seconds(
+    seconds: float, max_seconds: float = MAX_RETRY_AFTER_SECONDS
+) -> float:
+    """Clamp a wait to ``[0, max_seconds]``. NaN becomes 0."""
+    if math.isnan(seconds):
+        return 0.0
+    return min(max(seconds, 0.0), max_seconds)
+
 
 def parse_retry_after_seconds(value: str | None) -> float | None:
     """Parse an HTTP ``Retry-After`` header value into seconds to wait.
