@@ -47,10 +47,14 @@ class WebSearchWithContentResponse(BaseModel):
     full_content_results: list[LlmOpenUrlResult]
 
 
+MAX_OPEN_URLS_PER_REQUEST = 20
+
+
 class OpenUrlsToolRequest(BaseModel):
     urls: list[str] = Field(
         ...,
         min_length=1,
+        max_length=MAX_OPEN_URLS_PER_REQUEST,
         description="URLs to fetch using the configured content provider.",
     )
 

@@ -27,6 +27,7 @@ from onyx.server.features.search.models import (
     SearchResult,
 )
 from onyx.server.features.web_search.models import (
+    MAX_OPEN_URLS_PER_REQUEST,
     OpenUrlsToolRequest,
     OpenUrlsToolResponse,
     WebSearchToolRequest,
@@ -485,6 +486,7 @@ async def open_urls(
     Useful for following up on web search results when snippets do not provide enough information.
 
     Returns the full text content of each URL along with metadata like title and content type.
+    Accepts at most 20 URLs per call.
 
     Example usage:
     ```
@@ -501,6 +503,11 @@ async def open_urls(
     outcome = MCPToolCallStatus.ERROR
 
     try:
+        if len(urls) > MAX_OPEN_URLS_PER_REQUEST:
+            return _error_payload(
+                f"Too many URLs ({len(urls)}); pass at most "
+                f"{MAX_OPEN_URLS_PER_REQUEST} per call."
+            )
         response = await _post_model(
             f"{build_api_server_url_for_http_requests(respect_env_override_if_set=True)}/web-search/open-urls",
             OpenUrlsToolRequest(urls=urls),
